@@ -1,4 +1,7 @@
 use rayon::prelude::*;
+use rayon::slice::ParallelSliceMut;
+use std::io::{self, Write};
+use std::{thread, time};
 
 const WIDTH: usize = 20;
 const HEIGHT: usize = 20;
@@ -44,7 +47,6 @@ fn parse_initial_state(initial: &[&str]) -> Vec<u8> {
     let mut grid = Vec::with_capacity(WIDTH * HEIGHT);
     for row in initial {
         for ch in row.chars() {
-            // Convert the character to a digit. If conversion fails, assume the cell is dead.
             let cell = ch.to_digit(10).unwrap_or(0) as u8;
             grid.push(cell);
         }
@@ -52,7 +54,24 @@ fn parse_initial_state(initial: &[&str]) -> Vec<u8> {
     grid
 }
 
+fn print_grid(grid: &[u8]) {
+    let mut output = String::new();
+    for row in 0..HEIGHT {
+        for col in 0..WIDTH {
+            let cell = grid[index(row, col)];
+            let square = if cell == 1 { "⬛" } else { "⬜" };
+            output.push_str(square);
+        }
+        output.push('\n');
+    }
+    print!("{}", output);
+}
+
 fn main() {
+
+    print!("\x1b[?1049h");
+    io::stdout().flush().unwrap();
+
     let initial_state = [
         "00100000000000000000",
         "10100000000000000111",
@@ -76,24 +95,26 @@ fn main() {
         "00000000000000000010",
     ];
 
-    // Parse the initial state into a 1D grid.
     let mut grid = parse_initial_state(&initial_state);
     let mut next_grid = vec![0u8; WIDTH * HEIGHT];
-
-    // Initialize the entire 20x20 grid using 1s and 0s
-
 
     for _ in 0..10 { // simulate 10 generations
         update(&grid, &mut next_grid);
         std::mem::swap(&mut grid, &mut next_grid);
     }
 
-    // Print the final state of the grid
-    for row in 0..HEIGHT {
-        for col in 0..WIDTH {
-            let cell = grid[index(row, col)];
-            let square = if cell == 1 { "⬛" } else { "⬜" };
-            print!("{}", square);        }
-        println!();
+    let frame_duration = time::Duration::from_millis(200);
+
+    // Main simulation loop.
+    for _ in 0..57 {
+        update(&grid, &mut next_grid);
+        std::mem::swap(&mut grid, &mut next_grid);
+        print!("\x1b[H");
+        print_grid(&grid);
+        io::stdout().flush().unwrap();
+        thread::sleep(frame_duration);
     }
+
+    print!("\x1b[?1049l");
+    io::stdout().flush().unwrap();
 }
