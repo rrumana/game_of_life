@@ -1,5 +1,3 @@
-//! Game of Life engine implementations
-
 pub mod naive;
 pub mod ultimate;
 
@@ -34,6 +32,9 @@ pub trait GameOfLifeEngine {
     
     /// Get information about this engine
     fn benchmark_info(&self) -> EngineInfo;
+    
+    /// Get the value of a specific cell
+    fn get_cell(&self, row: usize, col: usize) -> bool;
     
     /// Get the width of the grid
     fn width(&self) -> usize {

@@ -1,12 +1,3 @@
-//! Ultimate Game of Life engine implementation
-//!
-//! This engine adopts the high-performance techniques from the reference implementation:
-//! - Optimized full/half adder algorithm for neighbor counting
-//! - Boundary padding (ghost cells) to eliminate boundary checks
-//! - Advanced SIMD with configurable width and cross-lane operations
-//! - Coarse-grained parallelism with thread pool management
-//! - Runtime SIMD width detection with scalar fallback
-
 use crate::engines::{GameOfLifeEngine, EngineInfo};
 use crate::grid::Grid;
 use rayon::{ThreadPool, ThreadPoolBuilder};
@@ -16,7 +7,6 @@ use std::simd::{LaneCount, Simd, SupportedLaneCount};
 use std::thread::available_parallelism;
 
 /// Ultimate Game of Life engine with configurable SIMD width
-/// Default SIMD width is 4 based on benchmark results showing optimal performance
 pub struct UltimateEngine<const N: usize = 4>
 where
     LaneCount<N>: SupportedLaneCount,
@@ -28,9 +18,8 @@ where
     columns: usize,       // includes padding and SIMD alignment
     actual_width: usize,  // user-visible width
     actual_height: usize, // user-visible height
-    // Pre-computed boundary masks for performance optimization
     boundary_masks: Vec<u64>,
-    boundary_x_start: usize, // First x coordinate that needs boundary masking
+    boundary_x_start: usize,
 }
 
 /// Helper function for ceiling division
@@ -40,8 +29,7 @@ fn div_ceil(x: usize, y: usize) -> usize {
 
 /// Check if SIMD support is available at compile time
 fn simd_supported() -> bool {
-    // Check if portable_simd feature is enabled
-    cfg!(feature = "portable_simd")
+    true
 }
 
 impl<const N: usize> UltimateEngine<N>
@@ -68,9 +56,8 @@ where
         for col in 0..columns {
             let global_x = if col == 0 { 0 } else { (col - 1) * 64 };
             if global_x >= width {
-                boundary_masks[col] = 0; // Entire column is beyond grid
+                boundary_masks[col] = 0;
             } else if global_x + 64 > width {
-                // Partially mask the column if it crosses the boundary
                 let bits_to_keep = width - global_x;
                 boundary_masks[col] = !0u64 << (64 - bits_to_keep);
             }
@@ -148,10 +135,10 @@ where
         let b4 = tb0 ^ b2;
         let c0 = (b0 & b1) | (tb0 & b2);
 
-        // Apply Conway's Game of Life rules
-        center |= ab;        // Birth condition
-        center &= b3 ^ b4;   // Survival condition 1
-        center &= !c0;       // Survival condition 2
+        // Rules
+        center |= ab;
+        center &= b3 ^ b4;
+        center &= !c0;
 
         center
     }
@@ -166,10 +153,9 @@ where
     pub fn step_batch(&mut self, steps: u32) {
         for _ in 0..steps {
             let threads = self.pool.current_num_threads();
-            let simulation_rows = self.height - 2;  // Exclude padding rows
+            let simulation_rows = self.height - 2;
             let chunk_size = (simulation_rows + threads - 1) / threads;
             
-            // Capture values needed in closure
             let columns = self.columns;
             let boundary_x_start = self.boundary_x_start;
             let boundary_masks = &self.boundary_masks;
@@ -181,10 +167,10 @@ where
                     .enumerate()
                 {
                     let field = &self.field;
-                    let boundary_masks = boundary_masks; // Capture reference
+                    let boundary_masks = boundary_masks;
                     scope.spawn(move |_| {
                         for yl in 0..(target.len() / columns) {
-                            let y = yl + i * chunk_size + 1;  // +1 for padding
+                            let y = yl + i * chunk_size + 1;
                             
                             // Prefetch next row for better cache performance (x86_64 only)
                             #[cfg(target_arch = "x86_64")]
@@ -199,29 +185,29 @@ where
                             }
                             
                             // Process columns in chunks for better cache locality
-                            for x in (1..columns - 1).step_by(N) {  // Skip padding columns
+                            for x in (1..columns - 1).step_by(N) {
                                 let i = y * columns + x;
 
                                 let center = Self::get_simd(field, i);
 
                                 let mut nbs = [
-                                    shr(Self::get_simd(field, i - columns)), // top left
-                                    Self::get_simd(field, i - columns),      // top
-                                    shl(Self::get_simd(field, i - columns)), // top right
-                                    shr(Self::get_simd(field, i)),           // middle left
-                                    shl(Self::get_simd(field, i)),           // middle right
-                                    shr(Self::get_simd(field, i + columns)), // bottom left
-                                    Self::get_simd(field, i + columns),      // bottom
-                                    shl(Self::get_simd(field, i + columns)), // bottom right
+                                    shr(Self::get_simd(field, i - columns)),
+                                    Self::get_simd(field, i - columns),
+                                    shl(Self::get_simd(field, i - columns)),
+                                    shr(Self::get_simd(field, i)),
+                                    shl(Self::get_simd(field, i)),
+                                    shr(Self::get_simd(field, i + columns)),
+                                    Self::get_simd(field, i + columns),
+                                    shl(Self::get_simd(field, i + columns)),
                                 ];
 
                                 // fix bits in neighbouring columns
-                                nbs[0][0] |= (field[i - columns - 1] & 1) << 63; // top left
-                                nbs[2][N - 1] |= (field[i - columns + N] & (1 << 63)) >> 63; // top right
-                                nbs[3][0] |= (field[i - 1] & 0x1) << 63; // left
-                                nbs[4][N - 1] |= (field[i + N] & (1 << 63)) >> 63; // right
-                                nbs[5][0] |= (field[i + columns - 1] & 1) << 63; // bottom left
-                                nbs[7][N - 1] |= (field[i + columns + N] & (1 << 63)) >> 63; // bottom right
+                                nbs[0][0] |= (field[i - columns - 1] & 1) << 63;
+                                nbs[2][N - 1] |= (field[i - columns + N] & (1 << 63)) >> 63;
+                                nbs[3][0] |= (field[i - 1] & 0x1) << 63;
+                                nbs[4][N - 1] |= (field[i + N] & (1 << 63)) >> 63;
+                                nbs[5][0] |= (field[i + columns - 1] & 1) << 63;
+                                nbs[7][N - 1] |= (field[i + columns + N] & (1 << 63)) >> 63;
 
                                 let mut result = Self::sub_step(center, &nbs);
                                 
@@ -316,16 +302,13 @@ where
     }
 
     fn get_grid(&self) -> &dyn Grid {
-        // For compatibility, we'd need to create a temporary grid
         panic!("UltimateEngine doesn't support direct grid access - use get_cell instead")
     }
 
     fn set_grid(&mut self, grid: &dyn Grid) {
-        // Clear current state
         self.field.fill(0);
         self.new_field.fill(0);
 
-        // Copy cells from the input grid
         for row in 0..grid.height().min(self.actual_height) {
             for col in 0..grid.width().min(self.actual_width) {
                 if grid.get_cell(row, col) {
@@ -348,6 +331,30 @@ where
             min_grid_size: Some((64, 64)),
             max_grid_size: None,
         }
+    }
+
+    fn get_cell(&self, row: usize, col: usize) -> bool {
+        self.get(col, row)
+    }
+
+    fn width(&self) -> usize {
+        self.actual_width
+    }
+
+    fn height(&self) -> usize {
+        self.actual_height
+    }
+
+    fn count_live_cells(&self) -> usize {
+        let mut count = 0;
+        for row in 0..self.actual_height {
+            for col in 0..self.actual_width {
+                if self.get(col, row) {
+                    count += 1;
+                }
+            }
+        }
+        count
     }
 
     fn run_steps(&mut self, steps: usize) {
@@ -406,40 +413,31 @@ where
 }
 
 /// Create an UltimateEngine with automatic SIMD width detection
-/// Falls back to NaiveEngine if SIMD is not supported
 pub fn auto_new_ultimate_engine(width: usize, height: usize) -> Box<dyn GameOfLifeEngine> {
     if simd_supported() {
-        // Use optimal SIMD width 4 based on benchmark results
         Box::new(UltimateEngine::<4>::new(width, height))
     } else {
-        // Fallback to NaiveEngine for compatibility
         Box::new(crate::engines::NaiveEngine::new(width, height))
     }
 }
 
 /// Create an UltimateEngine from a grid with automatic SIMD width detection
-/// Falls back to NaiveEngine if SIMD is not supported
 pub fn auto_from_grid_ultimate_engine(grid: &dyn Grid) -> Box<dyn GameOfLifeEngine> {
     if simd_supported() {
-        // Use optimal SIMD width 4 based on benchmark results
         Box::new(UltimateEngine::<4>::from_grid(grid))
     } else {
-        // Fallback to NaiveEngine for compatibility
         Box::new(crate::engines::NaiveEngine::from_grid(grid))
     }
 }
 
 /// Create an UltimateEngine with automatic SIMD width detection and runtime error handling
-/// This version catches panics and falls back gracefully
 pub fn safe_auto_new_ultimate_engine(width: usize, height: usize) -> Box<dyn GameOfLifeEngine> {
     if simd_supported() {
-        // Try to create SIMD engine with panic handling
         match std::panic::catch_unwind(|| {
             UltimateEngine::<4>::new(width, height)
         }) {
             Ok(engine) => Box::new(engine),
             Err(_) => {
-                // SIMD creation failed, fall back to NaiveEngine
                 Box::new(crate::engines::NaiveEngine::new(width, height))
             }
         }
@@ -449,7 +447,6 @@ pub fn safe_auto_new_ultimate_engine(width: usize, height: usize) -> Box<dyn Gam
 }
 
 /// Runtime SIMD width detection and engine creation
-/// Updated to use optimal SIMD width 4 and automatic detection
 pub fn create_optimal_engine(width: usize, height: usize) -> Box<dyn GameOfLifeEngine> {
     auto_new_ultimate_engine(width, height)
 }

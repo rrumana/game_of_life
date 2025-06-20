@@ -1,8 +1,3 @@
-//! Naive Game of Life engine implementation
-//! 
-//! This is the baseline implementation that directly translates the original code
-//! into the new modular structure.
-
 use crate::engines::{GameOfLifeEngine, EngineInfo};
 use crate::grid::{Grid, StandardGrid};
 use rayon::prelude::*;
@@ -28,7 +23,6 @@ impl NaiveEngine {
         let height = grid.height();
         let mut new_grid = StandardGrid::new(width, height);
         
-        // Copy the grid data
         for row in 0..height {
             for col in 0..width {
                 new_grid.set_cell(row, col, grid.get_cell(row, col));
@@ -46,7 +40,6 @@ impl NaiveEngine {
         let width = self.grid.width();
         let height = self.grid.height();
         
-        // Collect all new cell states
         let new_cells: Vec<bool> = (0..height * width)
             .into_par_iter()
             .map(|idx| {
@@ -55,7 +48,6 @@ impl NaiveEngine {
                 let neighbors = self.grid.count_neighbors(row, col);
                 let current_cell = self.grid.get_cell(row, col);
                 
-                // Apply Conway's Game of Life rules
                 match (current_cell, neighbors) {
                     (true, 2) | (true, 3) | (false, 3) => true,
                     _ => false,
@@ -63,14 +55,12 @@ impl NaiveEngine {
             })
             .collect();
         
-        // Update the next grid with new states
         for (idx, &alive) in new_cells.iter().enumerate() {
             let row = idx / width;
             let col = idx % width;
             self.next_grid.set_cell(row, col, alive);
         }
         
-        // Swap grids
         std::mem::swap(&mut self.grid, &mut self.next_grid);
     }
     
@@ -105,7 +95,6 @@ impl GameOfLifeEngine for NaiveEngine {
     }
     
     fn set_grid(&mut self, grid: &dyn Grid) {
-        // Recreate grids with correct dimensions if needed
         if self.grid.width() != grid.width() || self.grid.height() != grid.height() {
             self.grid = StandardGrid::new(grid.width(), grid.height());
             self.next_grid = StandardGrid::new(grid.width(), grid.height());
@@ -113,7 +102,6 @@ impl GameOfLifeEngine for NaiveEngine {
             self.grid.clear();
         }
         
-        // Copy the grid data
         for row in 0..grid.height() {
             for col in 0..grid.width() {
                 self.grid.set_cell(row, col, grid.get_cell(row, col));
@@ -121,15 +109,19 @@ impl GameOfLifeEngine for NaiveEngine {
         }
     }
     
+    fn get_cell(&self, row: usize, col: usize) -> bool {
+        self.grid.get_cell(row, col)
+    }
+    
     fn benchmark_info(&self) -> EngineInfo {
         EngineInfo {
             name: "Naive".to_string(),
             description: "Basic cell-by-cell simulation with parallel row processing".to_string(),
-            memory_per_cell_bits: 8.0, // 1 byte per cell (bool in Vec)
+            memory_per_cell_bits: 8.0,
             supports_parallel: true,
             supports_simd: false,
             min_grid_size: Some((1, 1)),
-            max_grid_size: None, // Limited by available memory
+            max_grid_size: None,
         }
     }
 }
@@ -149,7 +141,6 @@ mod tests {
     
     #[test]
     fn test_blinker_pattern() {
-        // Create a blinker pattern (oscillates with period 2)
         let pattern = [
             "...",
             "###",
@@ -159,20 +150,17 @@ mod tests {
         let grid = StandardGrid::from_string_pattern(&pattern, '#', '.').unwrap();
         let mut engine = NaiveEngine::from_grid(&grid as &dyn Grid);
         
-        // Initial state: horizontal line
         assert_eq!(engine.get_grid().count_live_cells(), 3);
         assert!(engine.get_grid().get_cell(1, 0));
         assert!(engine.get_grid().get_cell(1, 1));
         assert!(engine.get_grid().get_cell(1, 2));
         
-        // After one step: vertical line
         engine.step();
         assert_eq!(engine.get_grid().count_live_cells(), 3);
         assert!(engine.get_grid().get_cell(0, 1));
         assert!(engine.get_grid().get_cell(1, 1));
         assert!(engine.get_grid().get_cell(2, 1));
         
-        // After another step: back to horizontal line
         engine.step();
         assert_eq!(engine.get_grid().count_live_cells(), 3);
         assert!(engine.get_grid().get_cell(1, 0));
@@ -182,7 +170,6 @@ mod tests {
     
     #[test]
     fn test_block_pattern() {
-        // Create a block pattern (still life)
         let pattern = [
             "....",
             ".##.",
@@ -193,7 +180,6 @@ mod tests {
         let grid = StandardGrid::from_string_pattern(&pattern, '#', '.').unwrap();
         let mut engine = NaiveEngine::from_grid(&grid as &dyn Grid);
         
-        // Block should remain stable
         let initial_count = engine.get_grid().count_live_cells();
         assert_eq!(initial_count, 4);
         

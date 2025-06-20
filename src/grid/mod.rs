@@ -1,5 +1,3 @@
-//! Grid representations for Game of Life
-
 pub mod standard;
 
 pub use standard::StandardGrid;

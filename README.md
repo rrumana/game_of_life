@@ -22,17 +22,72 @@ These optimizations deliver **25x+ performance improvements** over basic impleme
 
 ## Usage
 
-Run the visual Game of Life simulation:
+### Basic Usage
+
+Run the visual Game of Life simulation with default settings:
 
 ```bash
 cargo run --release
 ```
 
-This will:
+### Command Line Options
+
+The program supports several command-line arguments:
+
+```bash
+cargo run --release -- [OPTIONS]
+```
+
+**Options:**
+- `-i, --input <FILE>`: Input file containing the initial grid state (default: `default.txt`)
+- `-g, --generations <NUM>`: Number of generations to simulate (default: 9)
+- `-f, --frame-duration <MS>`: Frame duration in milliseconds for visual simulation (default: 400)
+- `-h, --help`: Print help information
+- `-V, --version`: Print version information
+
+### Examples
+
+```bash
+# Run with default settings
+cargo run --release
+
+# Use a custom input file and run for 20 generations
+cargo run --release -- --input my_pattern.txt --generations 20
+
+# Run faster animation (200ms per frame)
+cargo run --release -- --frame-duration 200
+
+# Use short flags
+cargo run --release -- -i custom.txt -g 15 -f 300
+```
+
+### Input File Format
+
+Input files should contain a grid of 1s and 0s, where:
+- `1` represents a live cell
+- `0` represents a dead cell
+
+Example input file (`my_pattern.txt`):
+```
+0110
+1001
+1001
+0110
+```
+
+The program will automatically detect the grid dimensions from the file. All rows must have the same length.
+
+### Default Pattern
+
+The included `default.txt` file contains the original demo pattern converted to the 1s and 0s format.
+
+### What the simulation does:
+
 1. Automatically detect your hardware capabilities
 2. Select the optimal SIMD configuration
-3. Run a visual simulation showing the evolution of a complex pattern
-4. Display performance information and live cell counts
+3. Load the initial state from the specified input file (or use default pattern)
+4. Run a visual simulation showing the evolution over the specified number of generations
+5. Display performance information and live cell counts
 
 ## Requirements
 

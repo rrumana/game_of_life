@@ -95,8 +95,7 @@ impl BenchmarkSuite {
     /// Create a test grid from a pattern, scaling it to fit the target size
     fn create_test_grid(&self, pattern: &TestPattern, width: usize, height: usize) -> Result<StandardGrid, String> {
         let mut grid = StandardGrid::new(width, height);
-        
-        // Parse the pattern
+
         let pattern_height = pattern.pattern.len();
         if pattern_height == 0 {
             return Ok(grid);
@@ -107,7 +106,6 @@ impl BenchmarkSuite {
             return Ok(grid);
         }
         
-        // Center the pattern in the grid
         let start_row = (height.saturating_sub(pattern_height)) / 2;
         let start_col = (width.saturating_sub(pattern_width)) / 2;
         

@@ -1,40 +1,66 @@
-//! Game of Life demonstration using the new modular structure
-
 use game_of_life::prelude::*;
 use game_of_life::grid::StandardGrid;
 use std::io::{self, Write};
 use std::{thread, time};
+use clap::Parser;
+
+#[derive(Parser)]
+#[command(name = "game_of_life")]
+#[command(about = "A high-performance Conway's Game of Life simulator")]
+#[command(version)]
+struct Args {
+    /// Input file containing the initial grid state (1s and 0s)
+    #[arg(short, long, default_value = "default.txt")]
+    input: String,
+
+    /// Number of generations to simulate
+    #[arg(short, long, default_value = "8")]
+    generations: usize,
+
+    /// Frame duration in milliseconds for visual simulation
+    #[arg(short, long, default_value = "400")]
+    frame_duration: u64,
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = Args::parse();
+
     println!("Game of Life Optimization Demo");
     println!("==============================");
     
-    // Create the original pattern from the old implementation
-    let initial_state = [
-        "⬜███⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜",
-        "⬜██⬜⬜██⬜⬜██⬜⬜███⬜██",
-        "██⬜█⬜⬜█⬜⬜⬜⬜█⬜⬜██⬜⬜⬜",
-        "⬜⬜⬜█⬜⬜██⬜█⬜⬜█⬜⬜██⬜⬜",
-        "⬜██⬜⬜█⬜█⬜⬜⬜██⬜█⬜⬜█⬜",
-        "⬜⬜███⬜⬜⬜█⬜███⬜██⬜██",
-        "⬜⬜⬜⬜⬜⬜██⬜⬜█⬜███⬜██⬜",
-    ];
-    
-    // Convert the pattern to our new format
-    let grid = StandardGrid::from_string_pattern(&initial_state, '█', '⬜')?;
+    let grid = match StandardGrid::from_file(&args.input) {
+        Ok(grid) => {
+            println!("Loaded initial state from: {}", args.input);
+            grid
+        }
+        Err(_) => {
+            println!("Could not load file '{}', using default pattern", args.input);
+            let initial_state = [
+                "⬜███⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜",
+                "⬜██⬜⬜██⬜⬜██⬜⬜███⬜██",
+                "██⬜█⬜⬜█⬜⬜⬜⬜█⬜⬜██⬜⬜⬜",
+                "⬜⬜⬜█⬜⬜██⬜█⬜⬜█⬜⬜██⬜⬜",
+                "⬜██⬜⬜█⬜█⬜⬜⬜██⬜█⬜⬜█⬜",
+                "⬜⬜███⬜⬜⬜█⬜███⬜██⬜██",
+                "⬜⬜⬜⬜⬜⬜██⬜⬜█⬜███⬜██⬜",
+            ];
+            StandardGrid::from_string_pattern(&initial_state, '█', '⬜')?
+        }
+    };
+
     let mut engine = auto_from_grid_ultimate_engine(&grid as &dyn Grid);
 
     println!("\nRunning visual simulation with Ultimate Engine...");
     println!("Grid size: {}x{}", engine.width(), engine.height());
     println!("Initial live cells: {}", engine.count_live_cells());
+    println!("Generations to simulate: {}", args.generations);
     
-    // Run visual simulation
     print!("\x1b[?1049h"); // Enter alternate screen
     io::stdout().flush().unwrap();
     
-    let frame_duration = time::Duration::from_millis(400);
+    let frame_duration = time::Duration::from_millis(args.frame_duration);
     
-    for step in 0..9 {
+    for step in 0..=args.generations {
         print!("\x1b[H"); // Move cursor to top
         print!("\x1b[2J"); // Clear screen
         
@@ -44,7 +70,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         io::stdout().flush().unwrap();
         thread::sleep(frame_duration);
         
-        engine.step();
+        if step < args.generations {
+            engine.step();
+        }
     }
     
     thread::sleep(time::Duration::from_millis(2000));
@@ -57,17 +85,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("- SIMD parallelism for massive speedup");
     println!("- Advanced bit manipulation algorithms");
     println!("- Multi-threading with Rayon");
-    println!("\nFor benchmarks, run: cargo run --example ultimate_comparison --release");
     
     Ok(())
 }
 
 fn print_grid_from_engine(engine: &Box<dyn GameOfLifeEngine>) {
-    let grid = engine.get_grid();
     let mut output = String::new();
-    for row in 0..grid.height() {
-        for col in 0..grid.width() {
-            let cell = grid.get_cell(row, col);
+    for row in 0..engine.height() {
+        for col in 0..engine.width() {
+            let cell = engine.get_cell(row, col);
             let square = if cell { "⬛" } else { "⬜" };
             output.push_str(square);
         }
@@ -89,10 +115,22 @@ mod tests {
         assert_eq!(grid.height(), 3);
         assert_eq!(grid.count_live_cells(), 4);
         
-        // Check specific cells
         assert!(!grid.get_cell(0, 0)); // ⬜
         assert!(grid.get_cell(0, 1));  // █
         assert!(!grid.get_cell(0, 2)); // ⬜
+    }
+    
+    #[test]
+    fn test_file_loading() {
+        let test_content = "101\n010\n101";
+        std::fs::write("test_pattern.txt", test_content).unwrap();
+        
+        let grid = StandardGrid::from_file("test_pattern.txt").unwrap();
+        assert_eq!(grid.width(), 3);
+        assert_eq!(grid.height(), 3);
+        assert_eq!(grid.count_live_cells(), 5);
+        
+        std::fs::remove_file("test_pattern.txt").unwrap();
     }
     
     #[test]
@@ -101,28 +139,21 @@ mod tests {
         let grid = StandardGrid::from_string_pattern(&pattern, '#', '.').unwrap();
         let mut engine = UltimateEngine::<4>::from_grid(&grid);
         
-        // Initial state: horizontal line
         assert_eq!(engine.count_live_cells(), 3);
-        
-        // After one step: should become vertical line
         engine.step();
         assert_eq!(engine.count_live_cells(), 3);
-        
-        // After another step: back to horizontal
         engine.step();
         assert_eq!(engine.count_live_cells(), 3);
     }
     
     #[test]
     fn test_engine_equivalence() {
-        // Test that Ultimate and Naive engines produce the same results
         let pattern = [".....", ".###.", ".....", ".###.", "....."];
         let grid = StandardGrid::from_string_pattern(&pattern, '#', '.').unwrap();
         
         let mut naive_engine = NaiveEngine::from_grid(&grid as &dyn Grid);
         let mut ultimate_engine = UltimateEngine::<4>::from_grid(&grid as &dyn Grid);
         
-        // Run for several steps and verify they stay in sync
         for step in 0..5 {
             assert_eq!(
                 naive_engine.get_grid().count_live_cells(),

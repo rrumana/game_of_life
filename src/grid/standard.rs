@@ -1,5 +1,3 @@
-//! Standard grid implementation using Vec<bool>
-
 use super::Grid;
 
 /// Standard grid implementation that stores each cell as a boolean
@@ -33,7 +31,6 @@ impl StandardGrid {
             return Err("Grid width cannot be zero".to_string());
         }
         
-        // Verify all rows have the same length
         for (i, row) in cells.iter().enumerate() {
             if row.len() != width {
                 return Err(format!("Row {} has length {}, expected {}", i, row.len(), width));
@@ -75,6 +72,46 @@ impl StandardGrid {
                     c if c == alive_char => true,
                     c if c == dead_char => false,
                     _ => return Err(format!("Invalid character '{}' in pattern", ch)),
+                };
+                cells.push(cell);
+            }
+        }
+        
+        Ok(Self {
+            width,
+            height,
+            cells,
+        })
+    }
+    
+    /// Create a grid from a file containing 1s and 0s
+    pub fn from_file(file_path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        let content = std::fs::read_to_string(file_path)?;
+        let lines: Vec<&str> = content.lines().collect();
+        
+        if lines.is_empty() {
+            return Err("File is empty".into());
+        }
+        
+        let height = lines.len();
+        let width = lines[0].len();
+        
+        if width == 0 {
+            return Err("Grid width cannot be zero".into());
+        }
+        
+        let mut cells = Vec::with_capacity(width * height);
+        
+        for (row_idx, line) in lines.iter().enumerate() {
+            if line.len() != width {
+                return Err(format!("Row {} has length {}, expected {}", row_idx, line.len(), width).into());
+            }
+            
+            for ch in line.chars() {
+                let cell = match ch {
+                    '1' => true,
+                    '0' => false,
+                    _ => return Err(format!("Invalid character '{}' in file. Only '0' and '1' are allowed.", ch).into()),
                 };
                 cells.push(cell);
             }
@@ -176,8 +213,8 @@ mod tests {
         ];
         
         let grid = StandardGrid::from_string_pattern(&pattern, '#', '.').unwrap();
-        assert_eq!(grid.count_neighbors(1, 1), 4); // Center cell has 4 neighbors
-        assert_eq!(grid.count_neighbors(0, 0), 1); // Corner cell has 1 neighbor
-        assert_eq!(grid.count_neighbors(0, 1), 3); // Edge cell has 3 neighbors
+        assert_eq!(grid.count_neighbors(1, 1), 4);
+        assert_eq!(grid.count_neighbors(0, 0), 1);
+        assert_eq!(grid.count_neighbors(0, 1), 3);
     }
 }
