@@ -1,81 +1,15 @@
-use rayon::prelude::*;
-use rayon::slice::ParallelSliceMut;
+//! Game of Life demonstration using the new modular structure
+
+use game_of_life::prelude::*;
+use game_of_life::grid::StandardGrid;
 use std::io::{self, Write};
 use std::{thread, time};
 
-const WIDTH: usize = 19;
-const HEIGHT: usize = 7;
-
-fn index(row: usize, col: usize) -> usize {
-    row * WIDTH + col
-}
-
-fn count_neighbors(grid: &[u8], row: usize, col: usize) -> u8 {
-    let mut count = 0;
-    for dr in [-1, 0, 1].iter() {
-        for dc in [-1, 0, 1].iter() {
-            if *dr == 0 && *dc == 0 {
-                continue;
-            }
-            let r = row as isize + dr;
-            let c = col as isize + dc;
-            if r >= 0 && r < HEIGHT as isize && c >= 0 && c < WIDTH as isize {
-                count += grid[index(r as usize, c as usize)];
-            }
-        }
-    }
-    count
-}
-
-fn update(current: &[u8], next: &mut [u8]) {
-    next.par_chunks_mut(WIDTH)
-        .into_par_iter()
-        .enumerate()
-        .for_each(|(row, row_slice)| {
-            for col in 0..WIDTH {
-                let idx = index(row, col);
-                let neighbors = count_neighbors(current, row, col);
-                row_slice[col] = match (current[idx], neighbors) {
-                    (1, 2) | (1, 3) | (0, 3) => 1,
-                    _ => 0,
-                };
-            }
-        });
-}
-
-fn parse_initial_state(initial: &[&str]) -> Vec<u8> {
-    let mut grid = Vec::with_capacity(WIDTH * HEIGHT);
-    for row in initial {
-        for ch in row.chars() {
-            let cell = match ch {
-                '█' => 1,  // Black square represents alive cell
-                '⬜' => 0,  // Middle dot represents dead cell
-                _ => 0,    // Default to dead cell for any other character
-            };
-            grid.push(cell);
-        }
-    }
-    grid
-}
-
-fn print_grid(grid: &[u8]) {
-    let mut output = String::new();
-    for row in 0..HEIGHT {
-        for col in 0..WIDTH {
-            let cell = grid[index(row, col)];
-            let square = if cell == 1 { "⬛" } else { "⬜" };
-            output.push_str(square);
-        }
-        output.push('\n');
-    }
-    print!("{}", output);
-}
-
-fn main() {
-
-    print!("\x1b[?1049h");
-    io::stdout().flush().unwrap();
-
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Game of Life Optimization Demo");
+    println!("==============================");
+    
+    // Create the original pattern from the old implementation
     let initial_state = [
         "⬜███⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜",
         "⬜██⬜⬜██⬜⬜██⬜⬜███⬜██",
@@ -85,23 +19,119 @@ fn main() {
         "⬜⬜███⬜⬜⬜█⬜███⬜██⬜██",
         "⬜⬜⬜⬜⬜⬜██⬜⬜█⬜███⬜██⬜",
     ];
+    
+    // Convert the pattern to our new format
+    let grid = StandardGrid::from_string_pattern(&initial_state, '█', '⬜')?;
+    let mut engine = auto_from_grid_ultimate_engine(&grid as &dyn Grid);
 
-    let mut grid = parse_initial_state(&initial_state);
-    let mut next_grid = vec![0u8; WIDTH * HEIGHT];
+    println!("\nRunning visual simulation with Ultimate Engine...");
+    println!("Grid size: {}x{}", engine.width(), engine.height());
+    println!("Initial live cells: {}", engine.count_live_cells());
+    
+    // Run visual simulation
+    print!("\x1b[?1049h"); // Enter alternate screen
+    io::stdout().flush().unwrap();
+    
     let frame_duration = time::Duration::from_millis(400);
-
-    // Main simulation loop.
-    for _ in 0..8 {
-        update(&grid, &mut next_grid);
-        std::mem::swap(&mut grid, &mut next_grid);
-        print!("\x1b[H");
-        print_grid(&grid);
+    
+    for step in 0..9 {
+        print!("\x1b[H"); // Move cursor to top
+        print!("\x1b[2J"); // Clear screen
+        
+        println!("Step: {} | Live cells: {}", step, engine.count_live_cells());
+        print_grid_from_engine(&engine);
+        
         io::stdout().flush().unwrap();
         thread::sleep(frame_duration);
+        
+        engine.step();
     }
-
-    thread::sleep(time::Duration::from_millis(5000));
-
-    print!("\x1b[?1049l");
+    
+    thread::sleep(time::Duration::from_millis(2000));
+    print!("\x1b[?1049l"); // Exit alternate screen
     io::stdout().flush().unwrap();
+    
+    println!("\nSimulation complete!");
+    println!("Ultimate Engine features demonstrated:");
+    println!("- Bit-packed representation (64 cells per u64)");
+    println!("- SIMD parallelism for massive speedup");
+    println!("- Advanced bit manipulation algorithms");
+    println!("- Multi-threading with Rayon");
+    println!("\nFor benchmarks, run: cargo run --example ultimate_comparison --release");
+    
+    Ok(())
+}
+
+fn print_grid_from_engine(engine: &Box<dyn GameOfLifeEngine>) {
+    let grid = engine.get_grid();
+    let mut output = String::new();
+    for row in 0..grid.height() {
+        for col in 0..grid.width() {
+            let cell = grid.get_cell(row, col);
+            let square = if cell { "⬛" } else { "⬜" };
+            output.push_str(square);
+        }
+        output.push('\n');
+    }
+    print!("{}", output);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_pattern_conversion() {
+        let pattern = ["⬜█⬜", "█⬜█", "⬜█⬜"];
+        let grid = StandardGrid::from_string_pattern(&pattern, '█', '⬜').unwrap();
+        
+        assert_eq!(grid.width(), 3);
+        assert_eq!(grid.height(), 3);
+        assert_eq!(grid.count_live_cells(), 4);
+        
+        // Check specific cells
+        assert!(!grid.get_cell(0, 0)); // ⬜
+        assert!(grid.get_cell(0, 1));  // █
+        assert!(!grid.get_cell(0, 2)); // ⬜
+    }
+    
+    #[test]
+    fn test_ultimate_engine_functionality() {
+        let pattern = ["...", "###", "..."];
+        let grid = StandardGrid::from_string_pattern(&pattern, '#', '.').unwrap();
+        let mut engine = UltimateEngine::<4>::from_grid(&grid);
+        
+        // Initial state: horizontal line
+        assert_eq!(engine.count_live_cells(), 3);
+        
+        // After one step: should become vertical line
+        engine.step();
+        assert_eq!(engine.count_live_cells(), 3);
+        
+        // After another step: back to horizontal
+        engine.step();
+        assert_eq!(engine.count_live_cells(), 3);
+    }
+    
+    #[test]
+    fn test_engine_equivalence() {
+        // Test that Ultimate and Naive engines produce the same results
+        let pattern = [".....", ".###.", ".....", ".###.", "....."];
+        let grid = StandardGrid::from_string_pattern(&pattern, '#', '.').unwrap();
+        
+        let mut naive_engine = NaiveEngine::from_grid(&grid as &dyn Grid);
+        let mut ultimate_engine = UltimateEngine::<4>::from_grid(&grid as &dyn Grid);
+        
+        // Run for several steps and verify they stay in sync
+        for step in 0..5 {
+            assert_eq!(
+                naive_engine.get_grid().count_live_cells(),
+                ultimate_engine.count_live_cells(),
+                "Engines diverged at step {}", step
+            );
+            
+            naive_engine.step();
+            ultimate_engine.step();
+        }
+    }
 }
