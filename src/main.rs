@@ -33,8 +33,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Loaded initial state from: {}", args.input);
             grid
         }
-        Err(_) => {
-            println!("Could not load file '{}', using default pattern", args.input);
+        Err(e) => {
+            println!("Could not load file '{}', using default pattern: {}", args.input, e);
             let initial_state = [
                 "⬜███⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜",
                 "⬜██⬜⬜██⬜⬜██⬜⬜███⬜██",

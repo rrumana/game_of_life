@@ -84,7 +84,7 @@ impl StandardGrid {
         })
     }
     
-    /// Create a grid from a file containing 1s and 0s
+    /// Create a grid from a file containing █ and ·
     pub fn from_file(file_path: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let content = std::fs::read_to_string(file_path)?;
         let lines: Vec<&str> = content.lines().collect();
