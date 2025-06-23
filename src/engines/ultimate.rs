@@ -11,7 +11,7 @@ pub struct UltimateEngine<const N: usize = 4>
 where
     LaneCount<N>: SupportedLaneCount,
 {
-    pool: ThreadPool,
+    pool: Option<ThreadPool>,
     field: Vec<u64>,
     new_field: Vec<u64>,
     height: usize,        // includes padding (+2)
@@ -38,11 +38,20 @@ where
 {
     /// Create a new ultimate engine with the specified grid dimensions
     pub fn new(width: usize, height: usize) -> Self {
-        let threads = available_parallelism().unwrap().into();
-        let pool = ThreadPoolBuilder::new()
-            .num_threads(threads)
-            .build()
-            .unwrap();
+        // Create thread pool only for native platforms, not WebAssembly
+        let pool = if cfg!(target_arch = "wasm32") {
+            // WebAssembly: No thread pool needed, we'll run everything sequentially
+            None
+        } else {
+            // Native platforms: use available parallelism with fallback
+            let threads = available_parallelism()
+                .map(|n| n.into())
+                .unwrap_or(2);
+            ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .ok()
+        };
         
         // Reference-style column calculation with SIMD alignment and padding
         let columns = div_ceil(div_ceil(width, 64), N) * N + 2;
@@ -152,23 +161,25 @@ where
     /// Step the simulation for the specified number of steps
     pub fn step_batch(&mut self, steps: u32) {
         for _ in 0..steps {
-            let threads = self.pool.current_num_threads();
-            let simulation_rows = self.height - 2;
-            let chunk_size = (simulation_rows + threads - 1) / threads;
-            
             let columns = self.columns;
             let boundary_x_start = self.boundary_x_start;
             let boundary_masks = &self.boundary_masks;
 
-            self.pool.scope(|scope| {
-                for (i, target) in self.new_field
-                    [self.columns..self.columns * self.height - self.columns]
-                    .chunks_mut(chunk_size * self.columns)
-                    .enumerate()
-                {
-                    let field = &self.field;
-                    let boundary_masks = boundary_masks;
-                    scope.spawn(move |_| {
+            if let Some(ref pool) = self.pool {
+                // Use thread pool for parallel processing
+                let threads = pool.current_num_threads();
+                let simulation_rows = self.height - 2;
+                let chunk_size = (simulation_rows + threads - 1) / threads;
+
+                pool.scope(|scope| {
+                    for (i, target) in self.new_field
+                        [self.columns..self.columns * self.height - self.columns]
+                        .chunks_mut(chunk_size * self.columns)
+                        .enumerate()
+                    {
+                        let field = &self.field;
+                        let boundary_masks = boundary_masks;
+                        scope.spawn(move |_| {
                         for yl in 0..(target.len() / columns) {
                             let y = yl + i * chunk_size + 1;
                             
@@ -226,9 +237,62 @@ where
                                     .copy_from_slice(result.as_array());
                             }
                         }
-                    });
+                        });
+                    }
+                });
+            } else {
+                // Sequential processing for WebAssembly (no thread pool)
+                for target in self.new_field
+                    [self.columns..self.columns * self.height - self.columns]
+                    .chunks_mut(self.columns)
+                    .enumerate()
+                {
+                    let (i, target_row) = target;
+                    let y = i + 1;
+                    let field = &self.field;
+                    
+                    // Process columns in chunks for better cache locality
+                    for x in (1..columns - 1).step_by(N) {
+                        let i = y * columns + x;
+
+                        let center = Self::get_simd(field, i);
+
+                        let mut nbs = [
+                            shr(Self::get_simd(field, i - columns)),
+                            Self::get_simd(field, i - columns),
+                            shl(Self::get_simd(field, i - columns)),
+                            shr(Self::get_simd(field, i)),
+                            shl(Self::get_simd(field, i)),
+                            shr(Self::get_simd(field, i + columns)),
+                            Self::get_simd(field, i + columns),
+                            shl(Self::get_simd(field, i + columns)),
+                        ];
+
+                        // fix bits in neighbouring columns
+                        nbs[0][0] |= (field[i - columns - 1] & 1) << 63;
+                        nbs[2][N - 1] |= (field[i - columns + N] & (1 << 63)) >> 63;
+                        nbs[3][0] |= (field[i - 1] & 0x1) << 63;
+                        nbs[4][N - 1] |= (field[i + N] & (1 << 63)) >> 63;
+                        nbs[5][0] |= (field[i + columns - 1] & 1) << 63;
+                        nbs[7][N - 1] |= (field[i + columns + N] & (1 << 63)) >> 63;
+
+                        let mut result = Self::sub_step(center, &nbs);
+                        
+                        // Optimized boundary masking using pre-computed masks
+                        // Only apply masking if we're at or beyond the boundary region
+                        if x >= boundary_x_start {
+                            for lane in 0..N {
+                                let col_idx = x + lane;
+                                if col_idx < boundary_masks.len() {
+                                    result[lane] &= boundary_masks[col_idx];
+                                }
+                            }
+                        }
+                        
+                        target_row[x..x + N].copy_from_slice(result.as_array());
+                    }
                 }
-            });
+            }
             swap(&mut self.field, &mut self.new_field);
         }
     }
