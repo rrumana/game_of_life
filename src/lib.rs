@@ -1,6 +1,5 @@
 #![feature(portable_simd)]
 #![feature(array_windows)]
-#![feature(array_chunks)]
 
 pub mod engines;
 pub mod grid;
